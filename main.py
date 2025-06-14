@@ -3,43 +3,98 @@ from tkinter import simpledialog, messagebox
 from pysat.solvers import Glucose3
 from itertools import combinations
 
-CELL_SIZE = 40
+MAX_CANVAS_SIZE = 600
+VALID_KEYS = {"w", "b", "s", "1", "2", "3", "4"}
 
-# 任意にサイズ変更可
 ROWS = 3
 COLS = 3
-
-VALID_KEYS = {"w", "b", "s", "1", "2", "3", "4"}
+CELL_SIZE = 100  # 初期値
 
 class AkariApp:
     def __init__(self, master):
         self.master = master
-        self.board = [["." for _ in range(COLS)] for _ in range(ROWS)]
-        self.cells = [[None for _ in range(COLS)] for _ in range(ROWS)]
-        self.selected_cell = None
-        self.canvas = tk.Canvas(master, width=COLS*CELL_SIZE, height=ROWS*CELL_SIZE)
+        self.frame = tk.Frame(master)
+        self.frame.pack()
+
+        self.left_frame = tk.Frame(self.frame)
+        self.left_frame.pack(side=tk.LEFT)
+
+        self.canvas = tk.Canvas(self.left_frame)
         self.canvas.pack()
-        self.draw_grid()
         self.canvas.bind("<Button-1>", self.on_click)
         master.bind("<Key>", self.on_keypress)
 
-        self.solve_button = tk.Button(master, text="Solve", command=self.solve)
-        self.solve_button.pack(side=tk.LEFT)
+        self.button_frame = tk.Frame(self.left_frame)
+        self.button_frame.pack()
 
-        self.next_button = tk.Button(master, text="Next", command=self.show_next_solution)
-        self.next_button.pack(side=tk.LEFT)
+        tk.Button(self.button_frame, text="Solve", command=self.solve).pack(side=tk.LEFT)
+        tk.Button(self.button_frame, text="Next", command=self.show_next_solution).pack(side=tk.LEFT)
+        tk.Button(self.button_frame, text="Change Size", command=self.reset_size).pack(side=tk.LEFT)
+        tk.Button(self.button_frame, text="Reset", command=self.reset_board).pack(side=tk.LEFT)
 
+        self.help_label = tk.Label(self.frame, justify=tk.LEFT, anchor="nw", font=("Courier", 10), text=self.help_text())
+        self.help_label.pack(side=tk.RIGHT, padx=10, pady=10)
+
+        self.init_board()
+
+    def help_text(self):
+        return (
+            "【使い方ガイド】\n"
+            "\n"
+            "■ セルの操作\n"
+            "- クリックでセル選択\n"
+            "- キー入力でマス指定:\n"
+            "   w: 白マス\n"
+            "   b: 黒マス\n"
+            "   1〜4: 数字付き黒マス\n"
+            "\n"
+            "■ ボタン\n"
+            "- Solve: 全解を探索\n"
+            "- Next: 次の解を表示\n"
+            "- Change Size: サイズ変更\n"
+            "- Reset: 現在サイズで初期化\n"
+            "\n"
+            "■ 表示\n"
+            "- * は光源を示します\n"
+        )
+
+    def calculate_cell_size(self):
+        return min(MAX_CANVAS_SIZE // max(ROWS, COLS), 100)
+
+    def init_board(self):
+        global CELL_SIZE
+        CELL_SIZE = self.calculate_cell_size()
+
+        self.board = [["w" for _ in range(COLS)] for _ in range(ROWS)]
+        self.cells = [[None for _ in range(COLS)] for _ in range(ROWS)]
+        self.selected_cell = None
         self.solutions = []
         self.current_index = 0
         self.var_map = {}
+
+        self.canvas.config(width=COLS*CELL_SIZE, height=ROWS*CELL_SIZE)
+        self.canvas.delete("all")
+        self.draw_grid()
+        self.update_display()
+
+    def reset_size(self):
+        global ROWS, COLS
+        ROWS = simpledialog.askinteger("Rows", "行数 (3〜20)?", minvalue=3, maxvalue=20)
+        COLS = simpledialog.askinteger("Cols", "列数 (3〜20)?", minvalue=3, maxvalue=20)
+        if ROWS and COLS:
+            self.init_board()
+
+    def reset_board(self):
+        self.board = [["w" for _ in range(COLS)] for _ in range(ROWS)]
+        self.update_display()
 
     def draw_grid(self):
         for r in range(ROWS):
             for c in range(COLS):
                 x1, y1 = c * CELL_SIZE, r * CELL_SIZE
                 x2, y2 = x1 + CELL_SIZE, y1 + CELL_SIZE
-                rect = self.canvas.create_rectangle(x1, y1, x2, y2, fill="white", outline="gray")
-                text = self.canvas.create_text((x1+x2)//2, (y1+y2)//2, text="", font=("Arial", 16))
+                rect = self.canvas.create_rectangle(x1, y1, x2, y2, fill="#DDDDDD", outline="gray")
+                text = self.canvas.create_text((x1+x2)//2, (y1+y2)//2, text="", font=("Arial", CELL_SIZE // 2))
                 self.cells[r][c] = (rect, text)
 
     def update_display(self):
@@ -47,15 +102,20 @@ class AkariApp:
             for c in range(COLS):
                 val = self.board[r][c]
                 rect, text = self.cells[r][c]
-                if val == "B":
+                if val == "b":
                     self.canvas.itemconfig(rect, fill="black")
                     self.canvas.itemconfig(text, text="", fill="white")
-                elif val in "01234":
-                    self.canvas.itemconfig(rect, fill="white")
-                    self.canvas.itemconfig(text, text=val, fill="black")
+                elif val in "1234":
+                    self.canvas.itemconfig(rect, fill="black")
+                    self.canvas.itemconfig(text, text=val, fill="white")
+                elif val == "s":
+                    self.canvas.itemconfig(rect, fill="black")
+                    self.canvas.itemconfig(text, text="0", fill="white")
                 else:
-                    self.canvas.itemconfig(rect, fill="white")
+                    self.canvas.itemconfig(rect, fill="lightgray")
                     self.canvas.itemconfig(text, text="", fill="black")
+        self.highlight_selected()
+
 
     def on_click(self, event):
         c, r = event.x // CELL_SIZE, event.y // CELL_SIZE
@@ -67,9 +127,8 @@ class AkariApp:
         key = event.char.lower()
         if self.selected_cell and key in VALID_KEYS:
             r, c = self.selected_cell
-            self.board[r][c] = key.upper() if key == 'b' else key
+            self.board[r][c] = key
             self.update_display()
-            self.highlight_selected()
 
     def highlight_selected(self):
         for r in range(ROWS):
@@ -97,7 +156,7 @@ class AkariApp:
         for r in range(ROWS):
             for c in range(COLS):
                 rect, text = self.cells[r][c]
-                if self.board[r][c] == ".":
+                if self.board[r][c] == "w":
                     var = self.var_map.get((r, c))
                     if var in vars_true:
                         self.canvas.itemconfig(text, text="*", fill="red")
@@ -112,7 +171,7 @@ class AkariApp:
         var_id = 1
         for r in range(H):
             for c in range(W):
-                if board[r][c] == ".":
+                if board[r][c] == "w":
                     self.var_map[(r, c)] = var_id
                     var_id += 1
 
@@ -122,7 +181,7 @@ class AkariApp:
         def line_of_sight(r, c):
             for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
                 nr, nc = r + dr, c + dc
-                while in_bounds(nr, nc) and board[nr][nc] not in "01234B":
+                while in_bounds(nr, nc) and board[nr][nc] not in "01234b":
                     if (nr, nc) in self.var_map:
                         yield (nr, nc)
                     nr += dr
@@ -133,8 +192,7 @@ class AkariApp:
             if (r, c) in self.var_map:
                 vars.append(self.var_map[(r, c)])
             for (nr, nc) in line_of_sight(r, c):
-                if (nr, nc) != (r, c):
-                    vars.append(self.var_map[(nr, nc)])
+                vars.append(self.var_map[(nr, nc)])
             return vars
 
         cnf = []
@@ -147,7 +205,7 @@ class AkariApp:
 
         for r in range(H):
             for c in range(W):
-                if board[r][c] == ".":
+                if board[r][c] == "w":
                     clause = illuminated_vars(r, c)
                     cnf.append(clause)
 
@@ -161,10 +219,8 @@ class AkariApp:
                         if in_bounds(nr, nc) and (nr, nc) in self.var_map:
                             neighbors.append(self.var_map[(nr, nc)])
                     for combo in combinations(neighbors, N+1):
-                        assert(len(combo) == N+1)
                         cnf.append([-v for v in combo])
                     for combo in combinations(neighbors, len(neighbors) - N + 1):
-                        assert(len(combo) == len(neighbors) - N + 1)
                         cnf.append([v for v in combo])
 
         solver = Glucose3()
@@ -179,10 +235,8 @@ class AkariApp:
 
         return all_models
 
-
-# ==== 実行 ====
 if __name__ == "__main__":
     root = tk.Tk()
-    root.title("Akari GUI + All Solutions + Keyboard + Resize")
+    root.title("Akari Solver GUI")
     app = AkariApp(root)
     root.mainloop()

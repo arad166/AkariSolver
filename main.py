@@ -105,12 +105,9 @@ class AkariApp:
                 if val == "b":
                     self.canvas.itemconfig(rect, fill="black")
                     self.canvas.itemconfig(text, text="", fill="white")
-                elif val in "1234":
+                elif val in "01234":
                     self.canvas.itemconfig(rect, fill="black")
                     self.canvas.itemconfig(text, text=val, fill="white")
-                elif val == "s":
-                    self.canvas.itemconfig(rect, fill="black")
-                    self.canvas.itemconfig(text, text="0", fill="white")
                 else:
                     self.canvas.itemconfig(rect, fill="lightgray")
                     self.canvas.itemconfig(text, text="", fill="black")
@@ -127,7 +124,10 @@ class AkariApp:
         key = event.char.lower()
         if self.selected_cell and key in VALID_KEYS:
             r, c = self.selected_cell
-            self.board[r][c] = key
+            if key == "s":
+                self.board[r][c] = "0"
+            else:
+                self.board[r][c] = key
             self.update_display()
 
     def highlight_selected(self):
